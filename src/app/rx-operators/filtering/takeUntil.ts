@@ -14,3 +14,5 @@ const subscribe = example.subscribe(val => console.log(val));
 /**
  * As takeUntil mark the observable as complete, so we don't need to unsubscribe from the observable where we have used take, takeUntil
  */
+
+ //skip, skipUntil, skipWhile are opposite of take, takeUntil, takeWhile

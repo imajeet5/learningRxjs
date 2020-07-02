@@ -1,8 +1,13 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit } from '@angular/core';
 
 // import './rx-operators/transformation/concatMap'
+// import './rx-operators/transformation/bufferTime'
 // import './rx-operators/utility/delay'
-import './rx-operators/filtering/takeuntil'
+// import './rx-operators/filtering/takeUntil'
+// import './rx-operators/filtering/throttleTime'
+import './rx-operators/filtering/distinctUntilChange'
+// import dbs from './rx-operators/filtering/debounceTime'
+
 
 
 @Component({
@@ -10,8 +15,15 @@ import './rx-operators/filtering/takeuntil'
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, AfterViewInit {
   title = 'angular-playground';
-  constructor() {}
-  ngOnInit() {}
+  constructor() {
+
+  }
+  ngOnInit() {
+
+  }
+  ngAfterViewInit(){
+    // dbs()
+  }
 }
