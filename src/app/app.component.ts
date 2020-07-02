@@ -1,6 +1,9 @@
 import { Component, OnInit } from '@angular/core';
-// import './rx-operators/mergeMap';
-import './rx-operators/transformation/concatMap'
+
+// import './rx-operators/transformation/concatMap'
+// import './rx-operators/utility/delay'
+import './rx-operators/filtering/takeuntil'
+
 
 @Component({
   selector: 'app-root',
