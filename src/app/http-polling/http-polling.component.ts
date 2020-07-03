@@ -9,6 +9,7 @@ import {
   merge,
   timer,
 } from 'rxjs';
+import { ajax } from 'rxjs/ajax';
 import {
   map,
   mapTo,
@@ -19,6 +20,9 @@ import {
   filter,
   finalize,
   mergeMapTo,
+  switchMapTo,
+  take,
+  debounceTime,
 } from 'rxjs/operators';
 
 declare type RequestCategory = 'cats' | 'meats';
@@ -32,21 +36,28 @@ declare type RequestCategory = 'cats' | 'meats';
   styleUrls: ['./http-polling.component.css'],
 })
 export class HttpPollingComponent implements OnInit, AfterViewInit {
-  constructor() {}
-
-  ngOnInit(): void {}
-
-  ngAfterViewInit() {
-    this.polling();
-  }
-
-  polling() {
-    const CATS_URL = 'https://placekitten.com/g/{w}/{h}';
-
-    function mapCats(response): Observable<any> {
+  requestCategory: RequestCategory = 'cats';
+  startButton: HTMLElement;
+  stopButton: HTMLElement;
+  text: HTMLElement;
+  pollingStatus: HTMLElement;
+  catsRadio: HTMLElement;
+  meatsRadio: HTMLElement;
+  catImage: HTMLImageElement;
+  Obs: {
+    catsRadioButton$: Observable<string>;
+    meatsRadioButton$: Observable<string>;
+    startPolling$: Observable<Event>;
+    stopPolling$: Observable<Event>;
+  };
+  readonly requestUrls = {
+    cats: 'https://placekitten.com/g/{w}/{h}',
+    meats: 'https://baconipsum.com/api/?type=meat-and-filler',
+  };
+  readonly responseMapper = {
+    cats(response): Observable<string> {
       return from(
-        new Promise((resolve, reject) => {
-          // debugger;
+        new Promise<string>((resolve, reject) => {
           var blob = new Blob([response], { type: 'image/png' });
           let reader = new FileReader();
           reader.onload = (data: any) => {
@@ -55,138 +66,119 @@ export class HttpPollingComponent implements OnInit, AfterViewInit {
           reader.readAsDataURL(blob);
         })
       );
-    }
+    },
 
-    // Constants for Meat Requests
-    const MEATS_URL = 'https://baconipsum.com/api/?type=meat-and-filler';
-    function mapMeats(response): Observable<string> {
+    meats(response): Observable<string> {
       const parsedData = JSON.parse(response);
       return of(parsedData ? parsedData[0] : '');
-    }
+    },
+  };
 
-    /*************************
-     * Our Operating State
-     *************************/
-    // Which type of data we are requesting
-    let requestCategory: RequestCategory = 'cats';
-    // Current Polling Subscription
-    let pollingSub: Subscription;
-    /*************************/
+  constructor() {}
 
-    /**
-     * This function will make an AJAX request to the given Url, map the
-     * JSON parsed repsonse with the provided mapper function, and emit
-     * the result onto the returned observable.
-     */
-    function requestData(
-      url: string,
-      mapFunc: (any) => Observable<string>
-    ): Observable<string> {
-      console.log(url);
-      const xhr = new XMLHttpRequest();
-      return from(
-        new Promise<string>((resolve, reject) => {
-          // This is generating a random size for a placekitten image
-          //   so that we get new cats each request.
-          const w = Math.round(Math.random() * 400);
-          const h = Math.round(Math.random() * 400);
-          const targetUrl = url
-            .replace('{w}', w.toString())
-            .replace('{h}', h.toString());
+  ngOnInit(): void {}
 
-          xhr.addEventListener('load', () => {
-            resolve(xhr.response);
-          });
-          xhr.open('GET', targetUrl);
-          if (requestCategory === 'cats') {
-            // Our cats urls return binary payloads
-            //  so we need to respond as such.
-            xhr.responseType = 'arraybuffer';
-          }
-          xhr.send();
-        })
-      ).pipe(
-        switchMap((data) => mapFunc(data)),
-        tap((data) => console.log('Request result: ', data))
-      );
-    }
-
-    /**
-     * This function will begin our polling for the given state, and
-     * on the provided interval (defaulting to 5 seconds)
-     */
-    function startPolling(
-      category: RequestCategory,
-      interval: number = 5000
-    ): Observable<string> {
-      const url = category === 'cats' ? CATS_URL : MEATS_URL;
-      const mapper = category === 'cats' ? mapCats : mapMeats;
-
-      return timer(0, interval).pipe(
-        switchMap((_) => requestData(url, mapper))
-      );
-    }
-
-    // Gather our DOM Elements to wire up events
-    const startButton = document.getElementById('start');
-    const stopButton = document.getElementById('stop');
-    const text = document.getElementById('text');
-    const pollingStatus = document.getElementById('polling-status');
-    const catsRadio = document.getElementById('catsCheckbox');
-    const meatsRadio = document.getElementById('meatsCheckbox');
-    const catsClick$ = fromEvent(catsRadio, 'click').pipe(mapTo('cats'));
-    const meatsClick$ = fromEvent(meatsRadio, 'click').pipe(mapTo('meats'));
-    const catImage: HTMLImageElement = <HTMLImageElement>(
-      document.getElementById('cat')
-    );
-    // Stop polling
-    let stopPolling$ = fromEvent(stopButton, 'click');
-
-    function updateDom(result) {
-      if (requestCategory === 'cats') {
-        catImage.src = result;
-        console.log(catImage);
-      } else {
-        text.innerHTML = result;
-      }
-    }
-
-    function watchForData(category: RequestCategory) {
-      // Start  new Poll
-      return startPolling(category, 5000).pipe(
-        tap(updateDom),
-        takeUntil(
-          // stop polling on either button click or change of categories
-          merge(
-            stopPolling$,
-            merge(catsClick$, meatsClick$).pipe(filter((c) => c !== category))
-          )
-        ),
-        // for demo purposes only
-        finalize(() => (pollingStatus.innerHTML = 'Stopped'))
-      );
-    }
-
+  ngAfterViewInit() {
+    this.initializeHtmlElements();
     // Handle Form Updates
-    catsClick$.subscribe((category: RequestCategory) => {
-      requestCategory = category;
-      catImage.style.display = 'block';
-      text.style.display = 'none';
+    this.Obs.catsRadioButton$.subscribe((category: RequestCategory) => {
+      this.requestCategory = category;
+      this.catImage.style.display = 'block';
+      this.text.style.display = 'none';
     });
 
-    meatsClick$.subscribe((category: RequestCategory) => {
-      requestCategory = category;
-      catImage.style.display = 'none';
-      text.style.display = 'block';
+    this.Obs.meatsRadioButton$.subscribe((category: RequestCategory) => {
+      this.requestCategory = category;
+      this.catImage.style.display = 'none';
+      this.text.style.display = 'block';
     });
 
-    // Start Polling
-    fromEvent(startButton, 'click')
+    this.Obs.startPolling$
       .pipe(
-        // for demo purposes only
-        tap((_) => (pollingStatus.innerHTML = 'Started')),
-        mergeMapTo(watchForData(requestCategory))
+        // debounceTime(400),
+        tap((_) => (this.pollingStatus.innerHTML = 'Started')),
+        switchMap(() => this.startPolling())
       )
-      .subscribe();
+      .subscribe((data) => {
+        // console.log(data);
+      });
+  }
+
+  startPolling() {
+    const stopPolling = this.Obs.stopPolling$;
+    const crb = this.Obs.catsRadioButton$;
+    const mrb = this.Obs.meatsRadioButton$;
+    const reqCatg = this.requestCategory;
+    return timer(0, 2000).pipe(
+      switchMap(() => this.requestData()),
+      tap((result) => this.updateDom(result)),
+      takeUntil(
+        // stop polling on either button click or change of categories
+        merge(stopPolling, merge(crb, mrb).pipe(filter((c) => c !== reqCatg)))
+      ),
+      // for demo purposes only
+      finalize(() => (this.pollingStatus.innerHTML = 'Stopped'))
+    );
+  }
+
+  requestData(): Observable<string> {
+    const url = this.requestUrls[this.requestCategory];
+    const mapFunc = this.responseMapper[this.requestCategory];
+    const reqCatg = this.requestCategory;
+
+    const xhr = new XMLHttpRequest();
+    const xhr$ = from(
+      new Promise<string>((resolve, reject) => {
+        // This is generating a random size for a placekitten image
+        //   so that we get new cats each request.
+        const w = Math.round(Math.random() * 400);
+        const h = Math.round(Math.random() * 400);
+        const targetUrl = url
+          .replace('{w}', w.toString())
+          .replace('{h}', h.toString());
+
+        console.log(targetUrl);
+
+        xhr.addEventListener('load', () => {
+          resolve(xhr.response);
+        });
+        xhr.open('GET', targetUrl);
+        if (reqCatg === 'cats') {
+          // Our cats urls return binary payloads
+          //  so we need to respond as such.
+          xhr.responseType = 'arraybuffer';
+        }
+        xhr.send();
+      })
+    ).pipe(switchMap((data) => mapFunc(data)));
+
+    return xhr$;
+  }
+  updateDom(result) {
+    // debugger;
+    if (this.requestCategory === 'cats') {
+      this.catImage.src = result;
+    } else {
+      this.text.innerHTML = result;
+    }
+  }
+
+  initializeHtmlElements() {
+    this.startButton = document.getElementById('start');
+    this.stopButton = document.getElementById('stop');
+    this.text = document.getElementById('text');
+    this.pollingStatus = document.getElementById('polling-status');
+    this.catsRadio = document.getElementById('catsCheckbox');
+    this.meatsRadio = document.getElementById('meatsCheckbox');
+    this.catImage = <HTMLImageElement>document.getElementById('cat');
+
+    this.Obs = {
+      catsRadioButton$: fromEvent(this.catsRadio, 'click').pipe(mapTo('cats')),
+      meatsRadioButton$: fromEvent(this.meatsRadio, 'click').pipe(
+        mapTo('meats')
+      ),
+      startPolling$: fromEvent(this.startButton, 'click'),
+      stopPolling$: fromEvent(this.stopButton, 'click'),
+    };
   }
 }
